@@ -1,9 +1,11 @@
-FROM node:16 AS build-env
-COPY . /app
+FROM node:20-alpine3.18 AS build-env
+COPY package.json /app/package.json
+COPY package-lock.json /app/package-lock.json
+COPY index.js /app/index.js
 WORKDIR /app
 RUN npm run build
 
-FROM gcr.io/distroless/nodejs:16
+FROM node:20-alpine3.18
 LABEL org.opencontainers.image.source="https://github.com/oss-tooling/github-metrics:0.0.1"
 COPY --from=build-env /app/dist /app/dist
 WORKDIR /app/dist

@@ -1,22 +1,35 @@
 const crypto = require('crypto')
 const express = require('express')
 
-const {Client} = require('@opensearch-project/opensearch')
+const { Client } = require('@elastic/elasticsearch')
 
 const app = express()
 
-const AUTH = process.env.GH_TELEMETRY_AUTH
-const HOST = process.env.GH_TELEMETRY_HOST
-const PORT = process.env.GH_TELEMETRY_PORT || 3000
-const PROTOCOL = process.env.GH_TELEMETRY_PROTOCOL
+app.use(express.json())
 
-const FIELD_LIMIT = process.env.GH_TELEMETRY_FIELD_LIMIT || 2500
-const SHARDS = process.env.GH_TELEMETRY_SHARDS || 3
-const REPLICAS = process.env.GH_TELEMETRY_REPLICAS || 3
-const SECRET = process.env.GH_TELEMETRY_SECRET
+const HOST = process.env.GH_INSIGHTS_HOST
+const CA = process.env.GH_INSIGHTS_CA_CERT
+const USER = process.env.GH_INSIGHTS_USERNAME
+const PASS = process.env.GH_INSIGHTS_PASSWORD
+const PORT = process.env.PORT || 3000
+
+const FIELD_LIMIT = process.env.GH_INSIGHTS_FIELD_LIMIT || 5000
+const SHARDS = process.env.GH_INSIGHTS_SHARDS || 1
+const REPLICAS = process.env.GH_INSIGHTS_REPLICAS || 1
+const SECRET = process.env.GH_INSIGHTS_WEBHOOK_SECRET
 
 const client = new Client({
-    node: `${PROTOCOL}://${AUTH}@${HOST}`
+    node: `https://${HOST}:9200`,
+    auth: {
+        username: USER,
+        password: PASS
+    },
+    maxRetries: 5,
+    requestTimeout: 60000,
+    tls: {
+        ca: Buffer.from(CA, 'base64').toString('ascii'),
+        rejectUnauthorized: false
+    }
 })
 
 const indices = [
@@ -78,7 +91,7 @@ const indices = [
 
 async function seedIndices() {
     for (const index of indices) {
-        const created = await createIndexIfNotExists(index, settings)
+        const created = await createIndexIfNotExists(index)
         if (!created) {
             process.exit(1)
         }
@@ -87,23 +100,20 @@ async function seedIndices() {
 
 async function createIndexIfNotExists(index) {
     const settings = {
-        'settings': {
-            'index': {
-                'mapping.total_fields.limit': FIELD_LIMIT,
-                'number_of_shards': SHARDS,
-                'number_of_replicas': REPLICAS
-            }
-        }
+            'mapping.total_fields.limit': FIELD_LIMIT,
+            'number_of_shards': SHARDS,
+            'number_of_replicas': REPLICAS
     }
 
     try {
-        const exists = await client.indices.exists({
+        const response = await client.indices.exists({
             index: index
         })
-        if (exists.body === false) {
+        if (response === false) {
+            console.log(`Creating [${index}] index`)
             await client.indices.create({
                 index: index,
-                body: settings
+                settings: settings
             })
         }
         return true
@@ -126,18 +136,24 @@ app.post('/github/webhooks', async (req, res) => {
         if (!indices.includes(index)) {
             const created = await createIndexIfNotExists(index)
             if (created) {
-                indices.append(index)
+                indices.push(index)
             } else {
                 res.status(500).send({message: `Error creating [${index}] index`})
                 return
             }
         }
 
+        if(index === 'workflow_job' && req.body.action === 'completed') {
+            const startedAt = new Date(req.body.workflow_job.started_at)
+            const completedAt = new Date(req.body.workflow_job.completed_at)
+            req.body.workflow_job.duration = (completedAt - startedAt) / 1000.0
+        }
+
         console.log(`[${index}:${id}] Adding document`)
         await client.index({
             id: id,
             index: index,
-            body: req.body,
+            document: req.body,
             refresh: true
         })
         console.log(`[${index}:${id}] Document added`)
@@ -149,16 +165,22 @@ app.post('/github/webhooks', async (req, res) => {
     }
 })
 
+app.get('/healthz', (req, res) => {
+    res.status(200).send('ok')
+})
+
 function validateWebhook(req) {
-    const signature = req.headers['x-hub-signature-256']
-    const digest = crypto.createHmac('sha256', SECRET).update(JSON.stringify(req.body)).digest('hex')
-    const expectedSignature = `sha256=${digest}`
-    return signature === expectedSignature
+    const signature = crypto
+        .createHmac('sha256', SECRET)
+        .update(JSON.stringify(req.body))
+        .digest('hex')
+    const trusted = Buffer.from(`sha256=${signature}`, 'ascii')
+    const untrusted = Buffer.from(`${req.headers['x-hub-signature-256']}`, 'ascii')
+    return crypto.timingSafeEqual(trusted, untrusted)
 }
 
 (async function main() {
     await seedIndices()
-    app.use(express.json())
     app.listen(PORT, () => {
         console.log(`Listening for webhooks on port ${PORT}`)
     })

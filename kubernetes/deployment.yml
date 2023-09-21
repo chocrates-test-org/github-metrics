@@ -2,48 +2,46 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: github-telemetry
-  namespace: github
+  name: insights
+  namespace: insights
 spec:
   selector:
     matchLabels:
-      app: github-telemetry
+      app: insights
   replicas: 5
   template:
     metadata:
       labels:
-        app: github-telemetry
+        app: insights
     spec:
       containers:
-        - name: github-telemetry
-          image: ghcr.io/lindluni/opensearch-webhooks:1.0.0
+        - name: insights
+          image: ghcr.io/oss-tooling/github-metrics:es-beta-0.0.10
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
           env:
-            - name: PROTOCOL
+            - name: GH_INSIGHTS_HOST
+              value: "elasticsearch-es-http.insights.svc.cluster.local"
+            - name: GH_INSIGHTS_USERNAME
+              value: elastic
+            - name: GH_INSIGHTS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: github-telemetry
-                  key: protocol
+                  name: elasticsearch-es-elastic-user
+                  key: elastic
                   optional: false
-            - name: HOST
+            - name: GH_INSIGHTS_CA_CERT
               valueFrom:
                 secretKeyRef:
-                  name: github-telemetry
-                  key: host
+                  name: elasticsearch-es-http-ca-internal
+                  key: tls.crt
                   optional: false
-            - name: AUTH
+            - name: GH_INSIGHTS_WEBHOOK_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: github-telemetry
-                  key: auth
-                  optional: false
-            - name: SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: github-telemetry
-                  key: secret
+                  name: insights-app
+                  key: webhook_secret
                   optional: false
       imagePullSecrets:
         - name: ghcr

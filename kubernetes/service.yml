@@ -2,11 +2,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: github-telemetry-service
-  namespace: github
+  name: github-insights-service
 spec:
   ports:
     - port: 80
       targetPort: 3000
   selector:
-    app: github-telemetry
+    app: insights
