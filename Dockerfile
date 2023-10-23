@@ -6,7 +6,7 @@ WORKDIR /app
 RUN npm run build
 
 FROM node:20-alpine3.18
-LABEL org.opencontainers.image.source="https://github.com/oss-tooling/github-metrics:0.0.1"
+LABEL org.opencontainers.image.source="https://github.com/chocrates-test-org/github-metrics:0.0.1"
 COPY --from=build-env /app/dist /app/dist
 WORKDIR /app/dist
 CMD ["node", "index.js"]

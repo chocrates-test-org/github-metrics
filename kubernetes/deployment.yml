@@ -3,12 +3,12 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: insights
-  namespace: insights
+  namespace: default
 spec:
   selector:
     matchLabels:
       app: insights
-  replicas: 5
+  replicas: 1
   template:
     metadata:
       labels:
@@ -22,19 +22,19 @@ spec:
             - containerPort: 3000
           env:
             - name: GH_INSIGHTS_HOST
-              value: "elasticsearch-es-http.insights.svc.cluster.local"
+              value: "quickstart-es-http.default.svc.cluster.local"
             - name: GH_INSIGHTS_USERNAME
               value: elastic
             - name: GH_INSIGHTS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: elasticsearch-es-elastic-user
+                  name: quickstart-es-elastic-user
                   key: elastic
                   optional: false
             - name: GH_INSIGHTS_CA_CERT
               valueFrom:
                 secretKeyRef:
-                  name: elasticsearch-es-http-ca-internal
+                  name: quickstart-es-http-ca-internal
                   key: tls.crt
                   optional: false
             - name: GH_INSIGHTS_WEBHOOK_SECRET

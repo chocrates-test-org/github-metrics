@@ -1,5 +1,6 @@
 const crypto = require('crypto')
 const express = require('express')
+const { v4: uuidv4 } = require('uuid');
 
 const { Client } = require('@elastic/elasticsearch')
 
@@ -100,9 +101,9 @@ async function seedIndices() {
 
 async function createIndexIfNotExists(index) {
     const settings = {
-            'mapping.total_fields.limit': FIELD_LIMIT,
-            'number_of_shards': SHARDS,
-            'number_of_replicas': REPLICAS
+        'mapping.total_fields.limit': FIELD_LIMIT,
+        'number_of_shards': SHARDS,
+        'number_of_replicas': REPLICAS
     }
 
     try {
@@ -126,7 +127,7 @@ async function createIndexIfNotExists(index) {
 app.post('/github/webhooks', async (req, res) => {
     try {
         if (!validateWebhook(req)) {
-            res.status(400).send({message: 'Invalid signature'})
+            res.status(400).send({ message: 'Invalid signature' })
             return
         }
 
@@ -138,18 +139,50 @@ app.post('/github/webhooks', async (req, res) => {
             if (created) {
                 indices.push(index)
             } else {
-                res.status(500).send({message: `Error creating [${index}] index`})
+                res.status(500).send({ message: `Error creating [${index}] index` })
                 return
             }
         }
 
-        if(index === 'workflow_job' && req.body.action === 'completed') {
+        if (index === 'workflow_job' && req.body.action === 'completed') {
             const startedAt = new Date(req.body.workflow_job.started_at)
             const completedAt = new Date(req.body.workflow_job.completed_at)
             req.body.workflow_job.duration = (completedAt - startedAt) / 1000.0
         }
 
         console.log(`[${index}:${id}] Adding document`)
+
+        if (index == 'workflow_job') {
+            for (var step in req.body.workflow_job.steps) {
+                var job = req.body.workflow_job
+                var step_id = uuidv4()
+                console.log(`[workflow_step:${step_id}] Adding document`)
+
+                // build step document
+                let doc = {
+                    id: step_id,
+                    run_id: job.run_id,
+                    workflow_name: job.workflow_name,
+                    runner_id: job.runner_id,
+                    runner_name: job.runner_name,
+                    runner_group_name: job.runner_group_name,
+                    step: JSON.parse(req.body.workflow_job.steps[step])
+                }
+
+                console.log("Step: " + doc)
+                console.log("Step: " + JSON.stringify(doc))
+
+                await client.index({
+                    id: step_id,
+                    index: 'workflow_step',
+                    document: doc,
+                    refresh: true
+                })
+
+                console.log(`[workflow_step:${step_id}] Document added`)
+            }
+        }
+
         await client.index({
             id: id,
             index: index,
@@ -158,10 +191,10 @@ app.post('/github/webhooks', async (req, res) => {
         })
         console.log(`[${index}:${id}] Document added`)
 
-        res.status(201).send({message: 'Document added'})
+        res.status(201).send({ message: 'Document added' })
     } catch (err) {
         console.error(`Error indexing document: ${err.message}`)
-        res.status(err.status || 413).send({message: err.message})
+        res.status(err.status || 413).send({ message: err.message })
     }
 })
 
