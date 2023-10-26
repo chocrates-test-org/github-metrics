@@ -4,7 +4,10 @@ const { v4: uuidv4 } = require('uuid');
 
 const { Client } = require('@elastic/elasticsearch')
 
+const util = require('util')
 const app = express()
+
+
 
 app.use(express.json())
 
@@ -162,15 +165,17 @@ app.post('/github/webhooks', async (req, res) => {
                 let doc = {
                     id: step_id,
                     run_id: job.run_id,
+                    repo_name: req.body.repository.full_name,
                     workflow_name: job.workflow_name,
+                    job_name: job.name,
                     runner_id: job.runner_id,
                     runner_name: job.runner_name,
                     runner_group_name: job.runner_group_name,
-                    step: JSON.parse(req.body.workflow_job.steps[step])
+                    step: req.body.workflow_job.steps[step]
                 }
 
-                console.log("Step: " + doc)
-                console.log("Step: " + JSON.stringify(doc))
+                console.log("Step: " )
+                console.log(util.inspect(doc, {depth: null}))
 
                 await client.index({
                     id: step_id,
@@ -194,6 +199,7 @@ app.post('/github/webhooks', async (req, res) => {
         res.status(201).send({ message: 'Document added' })
     } catch (err) {
         console.error(`Error indexing document: ${err.message}`)
+        console.error(err.stack)
         res.status(err.status || 413).send({ message: err.message })
     }
 })
